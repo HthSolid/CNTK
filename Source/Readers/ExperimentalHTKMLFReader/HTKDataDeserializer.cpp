@@ -32,13 +32,7 @@ HTKDataDeserializer::HTKDataDeserializer(
       m_corpus(corpus),
       m_totalNumberOfFrames(0)
 {
-    // Currently we only support frame mode.
-    // TODO: Support of full sequences.
-    bool frameMode = feature.Find("frameMode", "true");
-    if (!frameMode)
-    {
-        LogicError("Currently only reader only supports frame mode. Please check your configuration.");
-    }
+    m_frameMode = feature.Find("frameMode", "true");
 
     ConfigHelper config(feature);
     config.CheckFeatureType();
@@ -170,7 +164,7 @@ ChunkDescriptions HTKDataDeserializer::GetChunkDescriptions()
         auto cd = make_shared<ChunkDescription>();
         cd->m_id = i;
         cd->m_numberOfSamples = m_chunks[i].GetTotalFrames();
-        cd->m_numberOfSequences = m_chunks[i].GetTotalFrames();
+        cd->m_numberOfSequences = m_frameMode ? m_chunks[i].GetTotalFrames() : m_chunks[i].GetNumberOfUtterances();
         chunks.push_back(cd);
     }
     return chunks;
@@ -187,16 +181,31 @@ void HTKDataDeserializer::GetSequencesForChunk(size_t chunkId, vector<SequenceDe
     {
         auto utterance = chunk.GetUtterance(i);
         size_t major = utterance->GetId();
-        // Because it is a frame mode, creating sequences for each frame.
-        for (size_t k = 0; k < utterance->GetNumberOfFrames(); ++k)
+
+        if (m_frameMode)
+        {
+            // Because it is a frame mode, creating sequences for each frame.
+            for (size_t k = 0; k < utterance->GetNumberOfFrames(); ++k)
+            {
+                SequenceDescription f;
+                f.m_chunkId = chunkId;
+                f.m_key.m_major = major;
+                f.m_key.m_minor = k;
+                f.m_id = offsetInChunk++;
+                f.m_isValid = true;
+                f.m_numberOfSamples = 1;
+                result.push_back(f);
+            }
+        }
+        else
         {
             SequenceDescription f;
             f.m_chunkId = chunkId;
             f.m_key.m_major = major;
-            f.m_key.m_minor = k;
+            f.m_key.m_minor = 0;
             f.m_id = offsetInChunk++;
             f.m_isValid = true;
-            f.m_numberOfSamples = 1;
+            f.m_numberOfSamples = utterance->GetNumberOfFrames();
             result.push_back(f);
         }
     }
@@ -306,7 +315,6 @@ void HTKDataDeserializer::GetSequenceById(size_t chunkId, size_t id, vector<Sequ
     size_t utteranceIndex = chunkDescription.GetUtteranceForChunkFrameIndex(id);
     const UtteranceDescription* utterance = chunkDescription.GetUtterance(utteranceIndex);
     auto utteranceFrames = chunkDescription.GetUtteranceFrames(utteranceIndex);
-    size_t frameIndex = id - utterance->GetStartFrameIndexInsideChunk();
 
     // wrapper that allows m[j].size() and m[j][i] as required by augmentneighbors()
     MatrixAsVectorOfVectors utteranceFramesWrapper(utteranceFrames);
@@ -321,29 +329,65 @@ void HTKDataDeserializer::GetSequenceById(size_t chunkId, size_t id, vector<Sequ
     }
 
     HTKSequenceDataPtr result = make_shared<HTKSequenceData>();
-    result->m_buffer.resize(m_dimension, 1);
     const vector<char> noBoundaryFlags; // TODO: dummy, currently to boundaries supported.
-    msra::dbn::augmentneighbors(utteranceFramesWrapper, noBoundaryFlags, frameIndex, leftExtent, rightExtent, result->m_buffer, 0);
-
-    result->m_numberOfSamples = 1;
-    msra::dbn::matrixstripe stripe(result->m_buffer, 0, result->m_buffer.cols());
-    if (m_elementType == ElementType::tfloat)
+    if (m_frameMode)
     {
-        result->m_data = &stripe(0, 0);
+        size_t frameIndex = id - utterance->GetStartFrameIndexInsideChunk();
+        result->m_buffer.resize(m_dimension, 1);
+        msra::dbn::augmentneighbors(utteranceFramesWrapper, noBoundaryFlags, frameIndex, leftExtent, rightExtent, result->m_buffer, 0);
+
+        result->m_numberOfSamples = 1;
+        msra::dbn::matrixstripe stripe(result->m_buffer, 0, result->m_buffer.cols());
+        if (m_elementType == ElementType::tfloat)
+        {
+            result->m_data = &stripe(0, 0);
+        }
+        else
+        {
+            assert(m_elementType == ElementType::tdouble);
+            const size_t dimensions = stripe.rows();
+            double *doubleBuffer = new double[dimensions];
+            const float *floatBuffer = &stripe(0, 0);
+
+            for (size_t i = 0; i < dimensions; i++)
+            {
+                doubleBuffer[i] = floatBuffer[i];
+            }
+
+            result->m_data = doubleBuffer;
+        }
     }
     else
     {
-        assert(m_elementType == ElementType::tdouble);
-        const size_t dimensions = stripe.rows();
-        double *doubleBuffer = new double[dimensions];
-        const float *floatBuffer = &stripe(0, 0);
+        result->m_buffer.resize(m_dimension, utterance->GetNumberOfFrames());
 
-        for (size_t i = 0; i < dimensions; i++)
+        for (size_t frameIndex = 0; frameIndex < utterance->GetNumberOfFrames(); ++frameIndex)
         {
-            doubleBuffer[i] = floatBuffer[i];
+            msra::dbn::augmentneighbors(utteranceFramesWrapper, noBoundaryFlags, frameIndex, leftExtent, rightExtent, result->m_buffer, frameIndex);
         }
 
-        result->m_data = doubleBuffer;
+        result->m_numberOfSamples = utterance->GetNumberOfFrames();
+        if (m_elementType == ElementType::tfloat)
+        {
+            result->m_data = &result->m_buffer(0, 0);
+        }
+        else
+        {
+            assert(m_elementType == ElementType::tdouble);
+            const size_t dimensions = result->m_buffer.rows();
+            double *doubleBuffer = new double[dimensions * result->m_numberOfSamples];
+
+            size_t counter = 0;
+            for (int sampleIndex = 0; sampleIndex < result->m_buffer.cols(); sampleIndex++)
+            {
+                for (int elementIndex = 0; elementIndex < result->m_buffer.rows(); elementIndex++)
+                {
+                    doubleBuffer[counter++] = result->m_buffer(elementIndex, sampleIndex);
+                }
+            }
+
+            result->m_data = doubleBuffer;
+        }
     }
 
     r.push_back(result);

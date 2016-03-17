@@ -61,6 +61,7 @@ SequenceModePacker::SequenceModePacker(
     for (int i = 0; i < m_outputStreams.size(); ++i)
     {
         const auto& stream = m_outputStreams[i];
+        UNUSED(stream);
 
         // Input and output should match in everything except for sparse/dense.
         assert(stream->m_elementType == ElementType::tfloat || stream->m_elementType == ElementType::tdouble);
