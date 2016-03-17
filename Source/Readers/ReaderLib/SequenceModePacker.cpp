@@ -115,15 +115,19 @@ Minibatch SequenceModePacker::ReadMinibatch()
 
     // Filling in initial set of m_parallelNumberOfSequences sequences.
     bool endOfEpoch = false;
-    while (sequenceCount < m_parallelNumberOfSequences && !endOfEpoch)
+    while (sequenceCount < m_parallelNumberOfSequences)
     {
         endOfEpoch = GetNextSequence(m_currentSequence);
+        if (endOfEpoch)
+        {
+            break;
+        }
         m_preparedSequences.push_back(std::vector<SequenceWrapperPtr> { m_currentSequence });
         sequenceCount++;
         m_currentSequence = nullptr;
     }
 
-    assert(m_preparedSequences.size() > m_parallelNumberOfSequences);
+    assert(m_preparedSequences.size() == m_parallelNumberOfSequences || endOfEpoch && m_preparedSequences.size() <= m_parallelNumberOfSequences);
 
     // Ok we have got our m_parallelNumberOfSequences.
     // Let's find the longest.
@@ -146,14 +150,13 @@ Minibatch SequenceModePacker::ReadMinibatch()
 
     // Ok, we identified how many free slots exists per row.
     // Let's fill them in with other sequences.
-    endOfEpoch = GetNextSequence(m_currentSequence);
     bool freeSpaceExists = true;
-    while (freeSpaceExists && !endOfEpoch)
+    while (freeSpaceExists && !GetNextSequence(m_currentSequence))
     {
         freeSpaceExists = false;
         for (int i = 0; i < freeSlots.size(); ++i)
         {
-            if (freeSlots[i] - m_currentSequence->GetMaxNumberOfSamples() >= 0)
+            if (freeSlots[i] - (int)m_currentSequence->GetMaxNumberOfSamples() >= 0)
             {
                 freeSpaceExists = true;
                 m_preparedSequences[i].push_back(m_currentSequence);
@@ -161,8 +164,6 @@ Minibatch SequenceModePacker::ReadMinibatch()
                 break;
             }
         }
-
-        endOfEpoch = GetNextSequence(m_currentSequence);
     }
 
     // Finished. Now the matrix of prepared sequences has been build.
@@ -202,6 +203,7 @@ void SequenceModePacker::PackStreamMinibatch(size_t streamId, const std::vector<
     if (totalNumberOfSamplesInStream > m_streamBufferSizes[streamId])
     {
         m_streamBuffers[streamId] = AllocateBuffer(totalNumberOfSamplesInStream, sampleSize);
+        m_streamBufferSizes[streamId] = totalNumberOfSamplesInStream;
     }
 
     // Fill everything with zeros.

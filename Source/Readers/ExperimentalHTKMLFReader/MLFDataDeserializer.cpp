@@ -38,6 +38,7 @@ struct MLFUtterance : SequenceDescription
 };
 
 MLFDataDeserializer::MLFDataDeserializer(CorpusDescriptorPtr corpus, const ConfigParameters& labelConfig, const std::wstring& name)
+    : m_corpus(corpus)
 {
     m_frameMode = labelConfig.Find("frameMode", "true");
 
@@ -220,11 +221,50 @@ ChunkPtr MLFDataDeserializer::GetChunk(size_t chunkId)
     return std::make_shared<MLFChunk>(this);
 }
 
+template <class ElemType>
+struct MLFSequenceData : SparseSequenceData
+{
+    std::vector<ElemType> m_nonZero;
+
+    MLFSequenceData(size_t numberOfSamples)
+        : m_nonZero(numberOfSamples, 1)
+    {
+        m_numberOfSamples = numberOfSamples;
+        m_data = m_nonZero.data();
+    }
+};
+
 void MLFDataDeserializer::GetSequenceById(size_t sequenceId, std::vector<SequenceDataPtr>& result)
 {
-    size_t label = m_classIds[m_frames[sequenceId].m_index];
-    assert(label < m_categories.size());
-    result.push_back(m_categories[label]);
+    if (m_frameMode)
+    {
+        size_t label = m_classIds[m_frames[sequenceId].m_index];
+        assert(label < m_categories.size());
+        result.push_back(m_categories[label]);
+    }
+    else
+    {
+        size_t numberOfSamples = m_utteranceIndex[sequenceId + 1] - m_utteranceIndex[sequenceId];
+        SparseSequenceDataPtr s;
+        if (m_elementType == ElementType::tfloat)
+        {
+            s = std::make_shared<MLFSequenceData<float>>(numberOfSamples);
+        }
+        else // double.
+        {
+            s = std::make_shared<MLFSequenceData<double>>(numberOfSamples);
+        }
+
+        size_t startFrameIndex = m_utteranceIndex[sequenceId];
+        s->m_indices.reserve(s->m_numberOfSamples);
+
+        for (size_t i = startFrameIndex; i < m_utteranceIndex[sequenceId + 1]; i++)
+        {
+            size_t label = m_classIds[m_frames[i].m_index];
+            s->m_indices.push_back(std::vector<size_t> { label });
+        }
+        result.push_back(s);
+    }
 }
 
 static SequenceDescription s_InvalidSequence { 0, 0, 0, false };
