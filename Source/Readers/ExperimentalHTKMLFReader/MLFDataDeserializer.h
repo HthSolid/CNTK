@@ -68,6 +68,8 @@ private:
     // Array of available categories.
     // We do no allocate data for all input sequences, only returning a pointer to existing category.
     std::vector<SparseSequenceDataPtr> m_categories;
+
+    bool m_frameMode;
 };
 
 }}}

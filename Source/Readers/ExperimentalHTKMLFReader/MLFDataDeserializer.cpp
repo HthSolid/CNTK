@@ -39,11 +39,7 @@ struct MLFUtterance : SequenceDescription
 
 MLFDataDeserializer::MLFDataDeserializer(CorpusDescriptorPtr corpus, const ConfigParameters& labelConfig, const std::wstring& name)
 {
-    bool frameMode = labelConfig.Find("frameMode", "true");
-    if (!frameMode)
-    {
-        LogicError("Currently only reader only supports fram mode. Please check your configuration.");
-    }
+    m_frameMode = labelConfig.Find("frameMode", "true");
 
     ConfigHelper config(labelConfig);
 
@@ -136,6 +132,7 @@ MLFDataDeserializer::MLFDataDeserializer(CorpusDescriptorPtr corpus, const Confi
             m_frames.push_back(f);
         }
     }
+    m_utteranceIndex.push_back(m_frames.size());
 
     m_totalNumberOfFrames = totalFrames;
 
@@ -177,7 +174,7 @@ ChunkDescriptions MLFDataDeserializer::GetChunkDescriptions()
 {
     auto cd = std::make_shared<ChunkDescription>();
     cd->m_id = 0;
-    cd->m_numberOfSequences = m_frames.size();
+    cd->m_numberOfSequences = m_frameMode ? m_frames.size() : m_keyToSequence.size();
     cd->m_numberOfSamples = m_frames.size();
     return ChunkDescriptions{cd};
 }
@@ -186,16 +183,33 @@ ChunkDescriptions MLFDataDeserializer::GetChunkDescriptions()
 void MLFDataDeserializer::GetSequencesForChunk(size_t, std::vector<SequenceDescription>& result)
 {
     result.reserve(m_frames.size());
-    for (size_t i = 0; i < m_frames.size(); ++i)
+    if (m_frameMode)
     {
-        SequenceDescription f;
-        f.m_key.m_major = m_frames[i].m_key.m_major;
-        f.m_key.m_minor = m_frames[i].m_key.m_minor;
-        f.m_id = m_frames[i].m_id;
-        f.m_chunkId = m_frames[i].m_chunkId;
-        f.m_numberOfSamples = 1;
-        f.m_isValid = true;
-        result.push_back(f);
+        for (size_t i = 0; i < m_frames.size(); ++i)
+        {
+            SequenceDescription f;
+            f.m_key.m_major = m_frames[i].m_key.m_major;
+            f.m_key.m_minor = m_frames[i].m_key.m_minor;
+            f.m_id = m_frames[i].m_id;
+            f.m_chunkId = m_frames[i].m_chunkId;
+            f.m_numberOfSamples = 1;
+            f.m_isValid = true;
+            result.push_back(f);
+        }
+    }
+    else
+    {
+        for (size_t i = 0; i < m_utteranceIndex.size() - 1; ++i)
+        {
+            SequenceDescription f;
+            f.m_key.m_major = m_frames[m_utteranceIndex[i]].m_key.m_major;
+            f.m_key.m_minor = 0;
+            f.m_id = i;
+            f.m_chunkId = m_frames[m_utteranceIndex[i]].m_chunkId;
+            f.m_numberOfSamples = m_utteranceIndex[i + 1] - m_utteranceIndex[i];
+            f.m_isValid = true;
+            result.push_back(f);
+        }
     }
 }
 
@@ -224,8 +238,20 @@ void MLFDataDeserializer::GetSequenceDescriptionByKey(const KeyType& key, Sequen
         return;
     }
 
-    size_t index = m_utteranceIndex[sequenceId->second] + key.m_minor;
-    result = m_frames[index];
+    if (m_frameMode)
+    {
+        size_t index = m_utteranceIndex[sequenceId->second] + key.m_minor;
+        result = m_frames[index];
+    }
+    else
+    {
+        result.m_key.m_major = key.m_major;
+        result.m_key.m_minor = 0;
+        result.m_id = sequenceId->second;
+        result.m_chunkId = m_frames[m_utteranceIndex[sequenceId->second]].m_chunkId;
+        result.m_numberOfSamples = m_utteranceIndex[sequenceId->second + 1] - m_utteranceIndex[sequenceId->second];
+        result.m_isValid = true;
+    }
 }
 
 }}}
