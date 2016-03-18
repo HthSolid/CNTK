@@ -151,7 +151,8 @@ Minibatch SequenceModePacker::ReadMinibatch()
     // Ok, we identified how many free slots exists per row.
     // Let's fill them in with other sequences.
     bool freeSpaceExists = true;
-    while (freeSpaceExists && !GetNextSequence(m_currentSequence))
+    endOfEpoch = GetNextSequence(m_currentSequence);
+    while (freeSpaceExists && !endOfEpoch)
     {
         freeSpaceExists = false;
         for (int i = 0; i < freeSlots.size(); ++i)
@@ -164,20 +165,33 @@ Minibatch SequenceModePacker::ReadMinibatch()
                 break;
             }
         }
+
+        if (!freeSpaceExists)
+        {
+            break;
+        }
+
+        endOfEpoch = GetNextSequence(m_currentSequence);
     }
 
     // Finished. Now the matrix of prepared sequences has been build.
     // Lets pack it in the format which can be consumed by GPU and create the corresponding MBLaoyuts.
-    return PackMinibatch(m_preparedSequences);
+    return PackMinibatch(m_preparedSequences, endOfEpoch);
 }
 
-Minibatch SequenceModePacker::PackMinibatch(const std::vector<std::vector<SequenceWrapperPtr>>& m_preparedSequences)
+Minibatch SequenceModePacker::PackMinibatch(const std::vector<std::vector<SequenceWrapperPtr>>& m_preparedSequences, bool endOfEpoch)
 {
     // Ok, we have all our sequences in order how they have to be packed:
     // Vector of m_parallelNumberOfSequences, in each element is another
     // vector that actually contains sequences not exceeding the max width.
     // Now let's pack them into contigues memory per stream.
     Minibatch result;
+    result.m_endOfEpoch = endOfEpoch;
+    if (m_preparedSequences.empty())
+    {
+        return result;
+    }
+
     for (size_t i = 0; i < m_outputStreams.size(); ++i)
     {
         PackStreamMinibatch(i, m_preparedSequences);

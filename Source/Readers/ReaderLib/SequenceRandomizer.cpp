@@ -225,7 +225,7 @@ namespace Microsoft { namespace MSR { namespace CNTK {
 
     // Sets current sequence position to the sample offset.
     // If offset is in the middle of the sequence, the next sequence is picked up.
-    void SequenceRandomizer::SetSequencePositionTo(size_t offset, size_t sweep)
+    size_t SequenceRandomizer::SetSequencePositionTo(size_t offset, size_t sweep)
     {
         size_t chunkIdx = GetChunkIndexOf(offset);
         if (!this->IsChunkInWindow(chunkIdx))
@@ -251,7 +251,7 @@ namespace Microsoft { namespace MSR { namespace CNTK {
         for (size_t i = 0; i < sequences.size(); ++i)
         {
             size_t sequenceSize = sequences[i].m_numberOfSamples;
-            if (sequenceSize + numberOfSamples > sampleOffsetInsideChunk)
+            if (numberOfSamples >= sampleOffsetInsideChunk)
             {
                 break;
             }
@@ -261,6 +261,7 @@ namespace Microsoft { namespace MSR { namespace CNTK {
         }
 
         m_currentSequencePosition = sequenceId + m_randomizedChunks[chunkIdx].m_sequencePositionStart;
+        return m_randomizedChunks[chunkIdx].m_samplePositionStart + numberOfSamples;
     }
 
     // Checks if the randomized sequence is valid for a target position using its chunk randomization window.

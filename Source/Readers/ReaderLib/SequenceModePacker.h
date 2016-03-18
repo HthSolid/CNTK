@@ -34,7 +34,7 @@ private:
     size_t GetSampleSize(StreamDescriptionPtr stream);
     bool GetNextSequence(SequenceWrapperPtr& sequence);
     MBLayoutPtr CreateStreamMBLayout(size_t streamId, const std::vector<std::vector<SequenceWrapperPtr>>& preparedSequences);
-    Minibatch PackMinibatch(const std::vector<std::vector<SequenceWrapperPtr>>& preparedSequences);
+    Minibatch PackMinibatch(const std::vector<std::vector<SequenceWrapperPtr>>& m_preparedSequences, bool endOfEpoch);
     void PackStreamMinibatch(size_t streamId, const std::vector<std::vector<SequenceWrapperPtr>>& preparedSequences);
     void PackSparseSample(void* destination, SequenceDataPtr sequence, size_t sample, size_t elementSize, size_t sampleSize);
     void PackDenseSample(void* destination, SequenceDataPtr sequence, size_t sample, size_t elementSize, size_t sampleSize);

@@ -213,7 +213,7 @@ void HTKDataDeserializer::GetSequencesForChunk(size_t chunkId, vector<SequenceDe
 
 // A wrapper around a matrix that views it as a vector of column vectors.
 // Does not have any memory associated.
-class MatrixAsVectorOfVectors 
+class MatrixAsVectorOfVectors
 {
 public:
     MatrixAsVectorOfVectors(msra::dbn::matrixbase& m)
@@ -286,19 +286,57 @@ ChunkPtr HTKDataDeserializer::GetChunk(size_t chunkId)
     return chunk;
 };
 
+// Store all features without padding.
+class FeatureMatrix
+{
+    std::vector<float> m_data;
+    size_t m_rows;
+    size_t m_columns;
+
+public:
+    FeatureMatrix(size_t rows, size_t columns) : m_rows(rows), m_columns(columns)
+    {
+        m_data.resize(rows * columns);
+    }
+
+    inline array_ref<float> col(size_t column)
+    {
+        return array_ref<float>(m_data.data() + m_rows * column, m_rows);
+    }
+
+    inline float* GetData()
+    {
+        return m_data.data();
+    }
+
+    inline size_t GetNumberOfColumns() const
+    {
+        return m_columns;
+    }
+
+    inline size_t GetTotalSize() const
+    {
+        return m_data.size();
+    }
+};
+
 // This class stores sequence data for HTK,
 //     - for floats: a simple pointer to the chunk data
 //     - for doubles: allocated array of doubles which is freed when the sequence is no longer used.
 struct HTKSequenceData : DenseSequenceData
 {
-    msra::dbn::matrix m_buffer;
+    FeatureMatrix m_buffer;
+
+    HTKSequenceData(size_t dimension, size_t numberOfSamples) : m_buffer(dimension, numberOfSamples)
+    {
+        m_data = m_buffer.GetData();
+        m_numberOfSamples = numberOfSamples;
+    }
 
     ~HTKSequenceData()
     {
-        msra::dbn::matrixstripe frame(m_buffer, 0, m_buffer.cols());
-
         // Checking if m_data just a pointer in to the 
-        if (m_data != &frame(0, 0))
+        if (m_data != m_buffer.GetData())
         {
             delete[] reinterpret_cast<double*>(m_data);
             m_data = nullptr;
@@ -328,28 +366,23 @@ void HTKDataDeserializer::GetSequenceById(size_t chunkId, size_t id, vector<Sequ
         leftExtent = rightExtent = msra::dbn::augmentationextent(utteranceFramesWrapper[0].size(), m_dimension);
     }
 
-    HTKSequenceDataPtr result = make_shared<HTKSequenceData>();
+    HTKSequenceDataPtr result;
     const vector<char> noBoundaryFlags; // TODO: dummy, currently to boundaries supported.
     if (m_frameMode)
     {
+        result = make_shared<HTKSequenceData>(m_dimension, 1);
+
         size_t frameIndex = id - utterance->GetStartFrameIndexInsideChunk();
-        result->m_buffer.resize(m_dimension, 1);
         msra::dbn::augmentneighbors(utteranceFramesWrapper, noBoundaryFlags, frameIndex, leftExtent, rightExtent, result->m_buffer, 0);
 
-        result->m_numberOfSamples = 1;
-        msra::dbn::matrixstripe stripe(result->m_buffer, 0, result->m_buffer.cols());
-        if (m_elementType == ElementType::tfloat)
-        {
-            result->m_data = &stripe(0, 0);
-        }
-        else
+        // Have to copy to a double buffer.
+        if (m_elementType == ElementType::tdouble)
         {
             assert(m_elementType == ElementType::tdouble);
-            const size_t dimensions = stripe.rows();
-            double *doubleBuffer = new double[dimensions];
-            const float *floatBuffer = &stripe(0, 0);
+            double *doubleBuffer = new double[m_dimension];
+            const float *floatBuffer = result->m_buffer.GetData();
 
-            for (size_t i = 0; i < dimensions; i++)
+            for (size_t i = 0; i < m_dimension; i++)
             {
                 doubleBuffer[i] = floatBuffer[i];
             }
@@ -359,33 +392,21 @@ void HTKDataDeserializer::GetSequenceById(size_t chunkId, size_t id, vector<Sequ
     }
     else
     {
-        result->m_buffer.resize(m_dimension, utterance->GetNumberOfFrames());
+        result = make_shared<HTKSequenceData>(m_dimension, utterance->GetNumberOfFrames());
 
         for (size_t frameIndex = 0; frameIndex < utterance->GetNumberOfFrames(); ++frameIndex)
         {
             msra::dbn::augmentneighbors(utteranceFramesWrapper, noBoundaryFlags, frameIndex, leftExtent, rightExtent, result->m_buffer, frameIndex);
         }
 
-        result->m_numberOfSamples = utterance->GetNumberOfFrames();
-        if (m_elementType == ElementType::tfloat)
+        // Have to copy to a double buffer.
+        if (m_elementType == ElementType::tdouble)
         {
-            result->m_data = &result->m_buffer(0, 0);
-        }
-        else
-        {
-            assert(m_elementType == ElementType::tdouble);
-            const size_t dimensions = result->m_buffer.rows();
-            double *doubleBuffer = new double[dimensions * result->m_numberOfSamples];
-
-            size_t counter = 0;
-            for (int sampleIndex = 0; sampleIndex < result->m_buffer.cols(); sampleIndex++)
+            double *doubleBuffer = new double[m_dimension * result->m_numberOfSamples];
+            for (size_t i = 0; i < result->m_buffer.GetTotalSize(); ++i)
             {
-                for (int elementIndex = 0; elementIndex < result->m_buffer.rows(); elementIndex++)
-                {
-                    doubleBuffer[counter++] = result->m_buffer(elementIndex, sampleIndex);
-                }
+                doubleBuffer[i] = *(result->m_buffer.GetData() + i);
             }
-
             result->m_data = doubleBuffer;
         }
     }

@@ -59,12 +59,14 @@ void BlockRandomizer::StartEpoch(const EpochConfiguration& config)
     }
 
     // Calculates global sample position.
-    m_globalSamplePosition = m_epochSize * config.m_epochIndex;
-    PrepareNewSweepIfNeeded(m_globalSamplePosition);
+    size_t globalStartPosition = m_epochSize * config.m_epochIndex;
+    PrepareNewSweepIfNeeded(globalStartPosition);
 
     // Sets sequence cursor to the sequence that corresponds to the global sample position.
     // If last epoch ended in the middle of a sequence, the cursor is moved to the next sequence in the sweep.
-    m_sequenceRandomizer->SetSequencePositionTo(m_globalSamplePosition % m_sweepTotalNumberOfSamples, m_sweep);
+    size_t offsetInSweep = globalStartPosition % m_sweepTotalNumberOfSamples;
+    size_t newOffset = m_sequenceRandomizer->SetSequencePositionTo(offsetInSweep, m_sweep);
+    m_globalSamplePosition = m_sweep * m_sweepTotalNumberOfSamples + newOffset;
 }
 
 // Prepares a new sweep if needed.
@@ -136,15 +138,16 @@ Sequences BlockRandomizer::GetNextSequences(size_t sampleCount)
 
 // Get next sequence descriptions that do not exceed sample count.
 // Returns true if epoch end is reached.
-bool BlockRandomizer::GetNextSequenceDescriptions(size_t sampleCount, std::vector<RandomizedSequenceDescription>& result)
+bool BlockRandomizer::GetNextSequenceDescriptions(size_t samples, std::vector<RandomizedSequenceDescription>& result)
 {
+    long sampleCount = (long)samples;
     PrepareNewSweepIfNeeded(m_globalSamplePosition);
 
     // Check epoch.
     size_t epochStart = m_config.m_epochIndex * m_epochSize;
-    if (m_globalSamplePosition - epochStart + sampleCount >= m_epochSize)
+    if (m_globalSamplePosition + sampleCount >= m_epochSize + epochStart)
     {
-        sampleCount = epochStart + m_epochSize - m_globalSamplePosition;
+        sampleCount -= (long)(m_globalSamplePosition + sampleCount - m_epochSize - epochStart);
     }
 
     if (sampleCount <= 0)
@@ -156,7 +159,7 @@ bool BlockRandomizer::GetNextSequenceDescriptions(size_t sampleCount, std::vecto
     size_t sweepPosition = m_globalSamplePosition % m_sweepTotalNumberOfSamples;
     if (sweepPosition + sampleCount >= m_sweepTotalNumberOfSamples)
     {
-        sampleCount = m_sweepTotalNumberOfSamples - sweepPosition;
+        sampleCount = (long)(m_sweepTotalNumberOfSamples - sweepPosition);
     }
     assert(sampleCount != 0);
 
