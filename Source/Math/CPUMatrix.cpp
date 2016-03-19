@@ -1405,13 +1405,11 @@ template <class ElemType>
 void CPUMatrix<ElemType>::Reshape(const size_t numRows, const size_t numCols)
 {
     assert(numRows * numCols == GetNumElements());
-    if (numRows * numCols != GetNumStorageRows() * GetNumStorageCols())
+    if (numRows * numCols != GetNumRows() * GetNumCols())
         InvalidArgument("Reshape: Total number of elements does not match.");
 
     m_numRows = numRows;
     m_numCols = numCols;
-    SetNumStorageRows(numRows);
-    SetNumStorageCols(numCols);
 }
 
 // Resize() -- change matrix size

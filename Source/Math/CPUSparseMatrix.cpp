@@ -1361,6 +1361,7 @@ template CPUSparseMatrix<char>& CPUSparseMatrix<char>::operator=(CPUSparseMatrix
 template void CPUSparseMatrix<char>::SetValue(size_t, size_t, char);
 template void CPUSparseMatrix<char>::SetValue(CPUSparseMatrix<char> const&);
 template char* CPUSparseMatrix<char>::BufferPointer() const;
+template char* CPUSparseMatrix<char>::BufferPointer();
 template void CPUSparseMatrix<char>::Reset(void);
 template CPUSparseMatrix<char>::~CPUSparseMatrix();
 template CPUSparseMatrix<char> CPUSparseMatrix<char>::ColumnSlice(size_t startColumn, size_t numCols) const;
