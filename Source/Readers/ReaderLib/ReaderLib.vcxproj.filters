@@ -58,6 +58,9 @@
     <ClInclude Include="Packer.h">
       <Filter>Interfaces</Filter>
     </ClInclude>
+    <ClInclude Include="SequencePacker.h">
+      <Filter>Packers</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="NoRandomizer.cpp">
@@ -82,6 +85,9 @@
       <Filter>Randomizers</Filter>
     </ClCompile>
     <ClCompile Include="SequenceModePacker.cpp">
+      <Filter>Packers</Filter>
+    </ClCompile>
+    <ClCompile Include="SequencePacker.cpp">
       <Filter>Packers</Filter>
     </ClCompile>
   </ItemGroup>
